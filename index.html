@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>City Defender: Swarm Assault</title>
+    <!-- Load Tailwind CSS for utility styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Tone.js for retro audio effects and music -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.min.js"></script>
+    
+    <style>
+        /* Custom retro styling for the game environment */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d0d1a; /* Dark background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #game-container {
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 3 / 4;
+            background-color: #1a1a33;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5), 0 0 50px rgba(0, 255, 255, 0.2);
+            border: 4px solid #00ffff;
+            border-radius: 8px;
+            position: relative;
+        }
+        #gameCanvas {
+            width: 100%;
+            height: calc(100% - 70px);
+            display: block;
+            image-rendering: pixelated;
+            background-color: #1a1a33;
+        }
+        #game-info {
+            height: 70px;
+            padding: 10px;
+            color: #00ffff;
+            background-color: #0a0a20;
+            border-top: 4px solid #00ffff;
+        }
+        .retro-button {
+            transition: all 0.1s;
+            background: linear-gradient(180deg, #ff00ff, #aa00aa);
+            border: 3px solid #ffff00;
+            text-shadow: 1px 1px 0 #000;
+            box-shadow: 0 4px #aa00aa;
+            cursor: pointer;
+            color: white;
+        }
+        .retro-button:hover {
+            background: linear-gradient(180deg, #ff33ff, #cc00cc);
+        }
+        .retro-button:active {
+            box-shadow: 0 1px #aa00aa;
+            transform: translateY(3px);
+        }
+        #menu-overlay, #game-over-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(10, 10, 32, 0.95);
+            backdrop-filter: blur(2px);
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #00ffff;
+            text-align: center;
+            padding: 20px;
+        }
+        #game-over-overlay {
+            display: none;
+        }
+        .info-card {
+            background-color: #1a1a33;
+            padding: 1rem;
+            border-radius: 6px;
+            border: 2px solid #00ffff;
+            margin-top: 1rem;
+            width: 80%;
+            max-width: 400px;
+            font-size: 1.25rem;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- Game Information HUD -->
+    <div id="game-info" class="flex justify-between items-center text-sm font-mono">
+        <div id="scoreDisplay">SCORE: 00000</div>
+        <div id="timerDisplay">TIME: 60</div>
+        <div id="livesDisplay">LIVES: 💚💚💚</div>
+    </div>
+
+    <!-- Start Menu Overlay -->
+    <div id="menu-overlay" class="flex">
+        <h1 class="text-4xl font-bold mb-4 text-yellow-400">CITY DEFENDER</h1>
+        <h2 class="text-2xl mb-8">SWARM ASSAULT</h2>
+        <div class="text-left text-lg mb-8 p-4 bg-gray-800 bg-opacity-50 rounded-lg border border-cyan-400">
+            <p class="mb-2">Defend the city from the 1-minute drone swarm!</p>
+            <ul class="list-disc list-inside space-y-1">
+                <li>**Move:** Drag the jet (Touch) or use A/D or Left/Right arrows (Keyboard).</li>
+                <li>**Fire:** Tap anywhere on screen (Touch) or press SPACE (Keyboard).</li>
+            </ul>
+        </div>
+        <div id="highScoreDisplay" class="text-xl mt-4 font-mono text-cyan-400">LOADING HIGH SCORE...</div>
+        <button id="startButton" class="retro-button px-6 py-3 text-xl font-bold rounded-lg uppercase tracking-widest mt-6">
+            Start Game
+        </button>
+    </div>
+
+    <!-- Game Over Overlay -->
+    <div id="game-over-overlay">
+        <h1 class="text-5xl font-extrabold mb-4 text-red-500 animate-pulse">GAME OVER</h1>
+        <div class="info-card">
+            <p id="finalScore" class="mb-2">SCORE: 00000</p>
+            <p id="currentHighScore" class="font-bold text-yellow-400">HIGH SCORE: 00000</p>
+        </div>
+        <p id="newHighScoreMessage" class="text-2xl mt-4 text-green-400 font-bold hidden">NEW HIGH SCORE!</p>
+
+        <button id="restartButton" class="retro-button px-6 py-3 text-xl font-bold rounded-lg uppercase tracking-widest mt-8">
+            Restart
+        </button>
+    </div>
+
+</div>
+
+<script>
+// Global Game Constants
+const GAME_DURATION = 60; // 60 seconds
+const MAX_LIVES = 3;
+const CANVAS_WIDTH = 600;
+const CANVAS_HEIGHT = 800; 
+const DRONE_SPAWN_INTERVAL = 0.5; // seconds
+
+// Game State Variables
+let gameState = {
+    score: 0,
+    lives: MAX_LIVES,
+    timer: GAME_DURATION,
+    isRunning: false,
+    lastTime: 0,
+    deltaTime: 0,
+    animationFrameId: null,
+};
+
+// High Score State (using localStorage for simplicity and stability)
+let allTimeHighScore = 0;
+
+// HTML Elements
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const timerDisplay = document.getElementById('timerDisplay');
+const livesDisplay = document.getElementById('livesDisplay');
+const menuOverlay = document.getElementById('menu-overlay');
+const gameOverOverlay = document.getElementById('game-over-overlay');
+const startButton = document.getElementById('startButton');
+const restartButton = document.getElementById('restartButton');
+const finalScoreElement = document.getElementById('finalScore');
+const highScoreDisplay = document.getElementById('highScoreDisplay');
+const currentHighScoreElement = document.getElementById('currentHighScore');
+const newHighScoreMessage = document.getElementById('newHighScoreMessage');
+
+// Game Entities
+let player = {
+    x: CANVAS_WIDTH / 2,
+    y: CANVAS_HEIGHT * 0.9,
+    width: 40,
+    height: 40,
+    color: '#00ccff',
+    speed: 500,
+    isShooting: false,
+    fireRate: 0.1,
+    lastShotTime: 0,
+};
+
+let projectiles = [];
+let enemies = [];
+let explosions = [];
+let droneSpawnTimer = 0;
+
+
+// --- Local Storage High Score Functions ---
+
+function loadHighScore() {
+    allTimeHighScore = parseInt(localStorage.getItem('cityDefenderHighScore') || '0', 10);
+    updateHighScoreUI();
+}
+
+function saveHighScore(newScore) {
+    if (newScore > allTimeHighScore) {
+        allTimeHighScore = newScore;
+        localStorage.setItem('cityDefenderHighScore', allTimeHighScore.toString());
+        return true;
+    }
+    return false;
+}
+
+function updateHighScoreUI() {
+    const scoreStr = allTimeHighScore.toString().padStart(5, '0');
+    highScoreDisplay.textContent = `HIGH SCORE: ${scoreStr}`;
+    currentHighScoreElement.textContent = `HIGH SCORE: ${scoreStr}`;
+}
+
+// --- Audio Setup (Tone.js) ---
+let synth, noise, musicLoop;
+let isAudioInitialized = false;
+
+function initializeAudio() {
+    if (isAudioInitialized) return;
+    isAudioInitialized = true;
+
+    // 1. Music Synth (Tone.js setup is robust, keep it)
+    const musicSynth = new Tone.PolySynth(Tone.AMSynth, {
+        oscillator: { type: "square" },
+        envelope: { attack: 0.01, decay: 0.2, sustain: 0.1, release: 0.1 },
+    }).toDestination();
+    musicSynth.volume.value = -15;
+    const notes = ["C4", "Eb4", "G4", "C5", "G4", "Eb4"];
+    musicLoop = new Tone.Sequence((time, note) => {
+        musicSynth.triggerAttackRelease(note, "4n", time);
+    }, notes, "4n").start(0);
+    Tone.Transport.bpm.value = 120;
+    Tone.Transport.loop = true;
+    Tone.Transport.loopEnd = '2m';
+
+    // 2. SFX: Player Laser
+    synth = new Tone.MonoSynth({
+        oscillator: { type: "square" },
+        envelope: { attack: 0.005, decay: 0.1, sustain: 0.01, release: 0.1 },
+    }).toDestination();
+    synth.volume.value = -10;
+
+    // 3. SFX: Drone Hit/Explosion
+    noise = new Tone.NoiseSynth({
+        noise: { type: "pink" },
+        envelope: { attack: 0.001, decay: 0.2, sustain: 0, release: 0.05 },
+    }).toDestination();
+    noise.volume.value = -5;
+
+    // 4. SFX: Power-up
+    const powerUpSynth = new Tone.Synth({
+        oscillator: { type: "triangle" },
+        envelope: { attack: 0.01, decay: 0.1, sustain: 0.05, release: 0.2 }
+    }).toDestination();
+
+    window.playPowerUpSFX = function() {
+        powerUpSynth.triggerAttackRelease("C5", "16n");
+        powerUpSynth.triggerAttackRelease("G5", "16n", Tone.now() + 0.05);
+        powerUpSynth.triggerAttackRelease("C6", "8n", Tone.now() + 0.1);
+    }
+}
+
+function playLaserSFX() {
+    if (gameState.isRunning && synth) synth.triggerAttackRelease("C4", "16n");
+}
+
+function playExplosionSFX() {
+    if (gameState.isRunning && noise) noise.triggerAttackRelease("8n");
+}
+
+// --- Game Logic Functions ---
+
+function resizeCanvas() {
+    const container = document.getElementById('game-container');
+    const rect = container.getBoundingClientRect();
+    const infoHeight = document.getElementById('game-info').offsetHeight;
+
+    canvas.width = rect.width;
+    canvas.height = rect.height - infoHeight;
+
+    // Scaling factors for drawing coordinates
+    window.scaleX = canvas.width / CANVAS_WIDTH;
+    window.scaleY = canvas.height / CANVAS_HEIGHT;
+}
+
+// Drawing functions... (drawPlayer, drawProjectiles, drawEnemies, drawExplosions - kept simple for stability)
+function drawPlayer() {
+    ctx.save();
+    ctx.translate(player.x * scaleX, player.y * scaleY);
+    ctx.fillStyle = player.color;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3 * scaleX;
+    ctx.beginPath();
+    ctx.moveTo(0, -player.height / 2 * scaleY);
+    ctx.lineTo(player.width / 2 * scaleX, player.height / 2 * scaleY);
+    ctx.lineTo(-player.width / 2 * scaleX, player.height / 2 * scaleY);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawProjectiles() {
+    ctx.fillStyle = '#ff0000';
+    projectiles.forEach(p => {
+        ctx.fillRect((p.x - 2) * scaleX, (p.y - 8) * scaleY, 4 * scaleX, 16 * scaleY);
+    });
+}
+
+function drawEnemies() {
+    enemies.forEach(e => {
+        if (e.type === 'life') {
+            ctx.fillStyle = '#ffcc00'; 
+            ctx.font = `${20 * scaleX}px monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('💛', e.x * scaleX, e.y * scaleY);
+        } else {
+            ctx.fillStyle = '#00ff00';
+            ctx.fillRect((e.x - e.width / 2) * scaleX, (e.y - e.height / 2) * scaleY, e.width * scaleX, e.height * scaleY);
+            ctx.strokeStyle = '#1a1a33';
+            ctx.lineWidth = 2 * scaleX;
+            ctx.beginPath();
+            ctx.moveTo((e.x - e.width / 2) * scaleX, (e.y - e.height / 2) * scaleY);
+            ctx.lineTo((e.x + e.width / 2) * scaleX, (e.y + e.height / 2) * scaleY);
+            ctx.moveTo((e.x + e.width / 2) * scaleX, (e.y - e.height / 2) * scaleY);
+            ctx.lineTo((e.x - e.width / 2) * scaleX, (e.y + e.height / 2) * scaleY);
+            ctx.stroke();
+        }
+    });
+}
+
+function drawExplosions() {
+    explosions.forEach(exp => {
+        exp.particles.forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.alpha;
+            ctx.fillRect(p.x * scaleX, p.y * scaleY, p.size * scaleX, p.size * scaleY);
+        });
+        ctx.globalAlpha = 1.0;
+    });
+}
+
+function update(dt) {
+    // 1. Check Game Over
+    gameState.timer -= dt;
+    if (gameState.timer <= 0 || gameState.lives <= 0) {
+        endGame(gameState.timer <= 0); // TRUE if time is up
+        return;
+    }
+
+    // 2. Player Shooting and Movement
+    handleKeyboardMovement(dt); // Integrate input handling
+    if (player.isShooting && player.lastShotTime + player.fireRate < Tone.now()) {
+        projectiles.push({ x: player.x, y: player.y - player.height / 2, velocity: -800, radius: 4 });
+        player.lastShotTime = Tone.now();
+        playLaserSFX();
+    }
+
+    // 3. Update Projectiles
+    projectiles.forEach(p => p.y += -800 * dt); // Use hardcoded speed for stability
+    projectiles = projectiles.filter(p => p.y > 0);
+
+    // 4. Update Enemies and Spawning
+    droneSpawnTimer += dt;
+    if (droneSpawnTimer >= DRONE_SPAWN_INTERVAL) {
+        const xPos = Math.random() * (CANVAS_WIDTH - 60) + 30;
+        const speed = 100 + (gameState.score / 50) * 1;
+        const type = (Math.random() < 0.08 && gameState.lives < MAX_LIVES) ? 'life' : 'drone';
+        const phase = Math.random() * Math.PI * 2;
+
+        enemies.push({
+            x: xPos, y: -50, width: 30, height: 30, velocity: speed, type: type, phase: phase, initialX: xPos,
+        });
+        droneSpawnTimer = 0;
+    }
+
+    // Move enemies and check for city breach
+    enemies = enemies.filter(e => {
+        e.y += e.velocity * dt;
+        e.x = e.initialX + Math.sin(e.y / 150 + e.phase) * 50;
+
+        if (e.y > CANVAS_HEIGHT - 30) {
+            if (e.type === 'drone') {
+                gameState.lives--;
+                playExplosionSFX();
+                createExplosion(e.x, e.y, 10, ['#ff0000', '#ff8800']);
+            }
+            return false; // Remove enemy on breach
+        }
+        return true;
+    });
+
+    // 5. Collision Detection
+    projectiles = projectiles.filter(p => {
+        let hit = false;
+        enemies = enemies.filter(e => {
+            if (p.x + p.radius > e.x - e.width / 2 && p.x - p.radius < e.x + e.width / 2 &&
+                p.y + p.radius > e.y - e.height / 2 && p.y - p.radius < e.y + e.height / 2) {
+                
+                hit = true;
+                if (e.type === 'life') {
+                    if (gameState.lives < MAX_LIVES) { gameState.lives++; window.playPowerUpSFX(); }
+                } else {
+                    gameState.score += 100;
+                    playExplosionSFX();
+                    createExplosion(e.x, e.y, 8, ['#ffcc00', '#ff00ff']);
+                }
+                return false;
+            }
+            return true;
+        });
+        return !hit;
+    });
+
+    // 6. Update Explosions
+    explosions = explosions.filter(exp => {
+        exp.life -= dt;
+        exp.particles.forEach(p => {
+            p.x += p.vx * dt;
+            p.y += p.vy * dt;
+            p.alpha = Math.max(0, p.alpha - dt * 2);
+        });
+        return exp.life > 0;
+    });
+}
+
+function createExplosion(x, y, count, colors) {
+    const particles = [];
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 100 + Math.random() * 100;
+        particles.push({
+            x: x, y: y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+            size: 4 + Math.random() * 4, color: colors[Math.floor(Math.random() * colors.length)], alpha: 1,
+        });
+    }
+    explosions.push({ particles: particles, life: 0.5 });
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw the city defense line
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(0, canvas.height - 30 * scaleY, canvas.width, 30 * scaleY);
+    ctx.fillStyle = '#ff0000';
+    ctx.font = `${18 * scaleX}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('CITY DEFENSE LINE', canvas.width / 2, canvas.height - 10 * scaleY);
+
+    drawProjectiles();
+    drawEnemies();
+    drawPlayer();
+    drawExplosions();
+
+    // Update HUD
+    scoreDisplay.textContent = `SCORE: ${gameState.score.toString().padStart(5, '0')}`;
+    timerDisplay.textContent = `TIME: ${Math.max(0, Math.floor(gameState.timer))}`;
+
+    let livesHtml = '';
+    for (let i = 0; i < MAX_LIVES; i++) {
+        livesHtml += (i < gameState.lives) ? '💚' : '💔';
+    }
+    livesDisplay.textContent = `LIVES: ${livesHtml}`;
+}
+
+function gameLoop(currentTime) {
+    if (!gameState.isRunning) {
+        // If the game is not running, cancel the animation frame and exit
+        cancelAnimationFrame(gameState.animationFrameId);
+        gameState.animationFrameId = null;
+        return;
+    }
+
+    const dt = (currentTime - gameState.lastTime) / 1000;
+    gameState.lastTime = currentTime;
+
+    update(dt);
+    render();
+
+    // CRITICAL: Schedule the next frame only if the update didn't trigger an endGame
+    if (gameState.isRunning) {
+        gameState.animationFrameId = requestAnimationFrame(gameLoop);
+    }
+}
+
+// --- Game Control & State Management ---
+
+function resetUI() {
+    menuOverlay.style.display = 'flex';
+    gameOverOverlay.style.display = 'none';
+    newHighScoreMessage.classList.add('hidden');
+    loadHighScore(); // Load score on reset
+
+    // Clear entities
+    projectiles = [];
+    enemies = [];
+    explosions = [];
+    
+    // Reset HUD
+    scoreDisplay.textContent = 'SCORE: 00000';
+    timerDisplay.textContent = 'TIME: 60';
+    livesDisplay.textContent = 'LIVES: 💚💚💚';
+    
+    if (ctx && canvas) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+}
+
+
+function startGame() {
+    // 1. Set up audio context on user interaction (if not done)
+    if (Tone.context.state !== 'running') {
+        Tone.start();
+        initializeAudio();
+    }
+    
+    // 2. Stop any potential ongoing loop
+    if (gameState.animationFrameId) {
+        cancelAnimationFrame(gameState.animationFrameId);
+    }
+
+    // 3. Reset game state and entities
+    gameState.score = 0;
+    gameState.lives = MAX_LIVES;
+    gameState.timer = GAME_DURATION;
+    gameState.isRunning = true;
+    player.x = CANVAS_WIDTH / 2;
+    player.isShooting = false;
+    isDragging = false; 
+    projectiles = [];
+    enemies = [];
+    explosions = [];
+
+    // 4. Hide overlays
+    menuOverlay.style.display = 'none';
+    gameOverOverlay.style.display = 'none';
+
+    // 5. Start the game loop
+    gameState.lastTime = performance.now();
+    Tone.Transport.start();
+    gameState.animationFrameId = requestAnimationFrame(gameLoop);
+}
+
+function endGame(isTimeUp) {
+    // CRITICAL FIX: Stop running state immediately and cancel any pending RAF
+    gameState.isRunning = false;
+    if (gameState.animationFrameId) {
+        cancelAnimationFrame(gameState.animationFrameId);
+        gameState.animationFrameId = null;
+    }
+    Tone.Transport.stop(); 
+    player.isShooting = false;
+    isDragging = false;
+    
+    // Check and Save High Score
+    const savedNewHighScore = saveHighScore(gameState.score);
+    updateHighScoreUI(); // Update UI with latest high score
+
+    // Update Game Over UI
+    gameOverOverlay.style.display = 'flex';
+    finalScoreElement.textContent = `YOUR SCORE: ${gameState.score.toString().padStart(5, '0')}`;
+    
+    // Update title based on end condition
+    const title = document.querySelector('#game-over-overlay h1');
+    if (isTimeUp) {
+        title.textContent = "TIME UP!";
+        title.className = 'text-5xl font-extrabold mb-4 text-green-500';
+    } else {
+        title.textContent = "GAME OVER";
+        title.className = 'text-5xl font-extrabold mb-4 text-red-500 animate-pulse';
+    }
+
+    if (savedNewHighScore) {
+        newHighScoreMessage.classList.remove('hidden');
+    } else {
+        newHighScoreMessage.classList.add('hidden');
+    }
+}
+
+// --- Input Handling (Strictly Checks gameState.isRunning) ---
+
+const keys = {};
+let isDragging = false;
+
+document.addEventListener('keydown', (e) => {
+    if (!gameState.isRunning) return; 
+    keys[e.key] = true;
+    if (e.key === ' ') {
+        player.isShooting = true;
+        e.preventDefault();
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    keys[e.key] = false;
+    if (e.key === ' ') {
+        player.isShooting = false;
+    }
+});
+
+function handleKeyboardMovement(dt) {
+    // Only called inside update, w
