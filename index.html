@@ -607,4 +607,85 @@ document.addEventListener('keyup', (e) => {
 });
 
 function handleKeyboardMovement(dt) {
-    // Only called inside update, w
+    // Only called inside update, which already checks gameState.isRunning
+    const moveLeft = keys['a'] || keys['A'] || keys['ArrowLeft'];
+    const moveRight = keys['d'] || keys['D'] || keys['ArrowRight'];
+
+    if (moveLeft) {
+        player.x -= player.speed * dt;
+    }
+    if (moveRight) {
+        player.x += player.speed * dt;
+    }
+
+    player.x = Math.max(player.width / 2, Math.min(CANVAS_WIDTH - player.width / 2, player.x));
+}
+
+function getNormalizedX(clientX) {
+    const rect = canvas.getBoundingClientRect();
+    const normalizedX = (clientX - rect.left) / rect.width;
+    return normalizedX * CANVAS_WIDTH;
+}
+
+function handlePointerStart(clientX) {
+    // CRITICAL FIX: Start Tone context here on first touch/click
+    if (Tone.context.state !== 'running') {
+        Tone.start();
+        initializeAudio();
+    }
+    
+    if (!gameState.isRunning) return; 
+
+    const x = getNormalizedX(clientX);
+    isDragging = true;
+    player.x = x;
+    player.isShooting = true;
+}
+
+function handlePointerMove(clientX) {
+    if (!isDragging || !gameState.isRunning) return; 
+    const x = getNormalizedX(clientX);
+    player.x = x;
+    player.x = Math.max(player.width / 2, Math.min(CANVAS_WIDTH - player.width / 2, player.x));
+}
+
+function handlePointerEnd() {
+    isDragging = false;
+    player.isShooting = false;
+}
+
+// Mouse events
+canvas.addEventListener('mousedown', (e) => handlePointerStart(e.clientX));
+document.addEventListener('mousemove', (e) => handlePointerMove(e.clientX));
+document.addEventListener('mouseup', handlePointerEnd);
+
+// Touch events
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handlePointerStart(e.touches[0].clientX);
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    handlePointerMove(e.touches[0].clientX);
+}, { passive: false });
+
+document.addEventListener('touchend', (e) => {
+    if (e.touches.length === 0) {
+        handlePointerEnd();
+    }
+});
+
+// Attach events to buttons
+startButton.addEventListener('click', startGame);
+restartButton.addEventListener('click', startGame);
+
+// Initial setup
+window.addEventListener('resize', resizeCanvas);
+window.onload = function() {
+    resizeCanvas();
+    resetUI();
+};
+
+</script>
+
