@@ -193,6 +193,7 @@ let projectiles = [];
 let enemies = [];
 let explosions = [];
 let droneSpawnTimer = 0;
+let lastExplosionTime = 0; // Added cooldown timer for explosion SFX
 
 
 // --- Local Storage High Score Functions (Now with Error Handling) ---
@@ -280,7 +281,14 @@ function playLaserSFX() {
 }
 
 function playExplosionSFX() {
-    if (gameState.isRunning && noise) noise.triggerAttackRelease("8n");
+    const minInterval = 0.05; // 50ms cooldown to prevent Tone.js scheduling error
+    const now = Tone.now();
+
+    // Only play if game is running, synth is ready, AND enough time has passed
+    if (gameState.isRunning && noise && (now - lastExplosionTime) > minInterval) {
+        noise.triggerAttackRelease("8n");
+        lastExplosionTime = now;
+    }
 }
 
 // --- Game Logic Functions ---
