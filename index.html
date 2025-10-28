@@ -195,17 +195,26 @@ let explosions = [];
 let droneSpawnTimer = 0;
 
 
-// --- Local Storage High Score Functions ---
+// --- Local Storage High Score Functions (Now with Error Handling) ---
 
 function loadHighScore() {
-    allTimeHighScore = parseInt(localStorage.getItem('cityDefenderHighScore') || '0', 10);
+    try {
+        allTimeHighScore = parseInt(localStorage.getItem('cityDefenderHighScore') || '0', 10);
+    } catch (e) {
+        console.error("Could not load high score from localStorage (likely in incognito mode).", e);
+        allTimeHighScore = 0; // Default to 0 if storage fails
+    }
     updateHighScoreUI();
 }
 
 function saveHighScore(newScore) {
     if (newScore > allTimeHighScore) {
         allTimeHighScore = newScore;
-        localStorage.setItem('cityDefenderHighScore', allTimeHighScore.toString());
+        try {
+            localStorage.setItem('cityDefenderHighScore', allTimeHighScore.toString());
+        } catch (e) {
+            console.error("Could not save high score to localStorage (likely in incognito mode).", e);
+        }
         return true;
     }
     return false;
@@ -628,7 +637,7 @@ function getNormalizedX(clientX) {
 }
 
 function handlePointerStart(clientX) {
-    // CRITICAL FIX: Start Tone context here on first touch/click
+    // CRITICAL: Start Tone context here on first touch/click
     if (Tone.context.state !== 'running') {
         Tone.start();
         initializeAudio();
@@ -688,4 +697,3 @@ window.onload = function() {
 };
 
 </script>
-
